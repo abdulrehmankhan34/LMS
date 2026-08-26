@@ -4,6 +4,7 @@ import User from "./models/User.js";
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken";
 import authMiddleware from "./middleware/authMiddleware.js";
+import roleMiddleware from "./middleware/roleMiddleware.js";
 dotenv.config();
 
 
@@ -76,8 +77,7 @@ app.post("/login", async (req, res) => {
     });
 
   } catch (error) {
-     console.log("JWT ERROR:", error.name);
-  console.log("JWT MESSAGE:", error.message);
+     
     res.status(400).json({
       message: error.message
     });
@@ -89,6 +89,28 @@ app.get("/profile", authMiddleware, (req, res) => {
     user: req.user
   });
 });
+app.get(
+  "/admin-test",
+  authMiddleware,
+  roleMiddleware("admin"),
+  (req, res) => {
+    res.json({
+      message: "Admin route accessed successfully",
+      user: req.user
+    });
+  }
+);
+app.get(
+  "/teacher-test",
+  authMiddleware,
+  roleMiddleware("admin", "teacher"),
+  (req, res) => {
+    res.json({
+      message: "Admin or Teacher can access this route",
+      user: req.user
+    });
+  }
+);
 app.get("/", (req, res) => {
     res.send("Hello World")
 })

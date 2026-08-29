@@ -5,6 +5,7 @@ import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken";
 import authMiddleware from "./middleware/authMiddleware.js";
 import roleMiddleware from "./middleware/roleMiddleware.js";
+import Course from "./models/Course.js";
 dotenv.config();
 
 
@@ -83,11 +84,101 @@ app.post("/login", async (req, res) => {
     });
   }
 });
+app.post("/courses", 
+authMiddleware, roleMiddleware("teacher"), async (req, res) => {
+  try { 
+    const { title, description, price } = req.body;
+    const teacherId = req.user.userId; // Get the teacher's ID from the authenticated user
+    const course = await Course.create({
+      title,
+      description,
+      price,
+      teacher: teacherId
+    });
+    res.status(201).json(course);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+app.put("/courses/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ message: "Course not found" });
+    }
+    if (course.teacher.toString() !== req.user.userId) {
+  return res.status(403).json({
+    message: "You can only update your own course"
+  });
+}
+    const { title, description, price } = req.body;
+    const updatedCourse = await Course.findByIdAndUpdate(
+      courseId,
+      { title, description, price },
+      { new: true }
+    );
+    if (!updatedCourse) {
+      return res.status(404).json({ message: "Course not found" });
+    }
+    res.status(200).json({ message: "Course Updated Successfully", course: updatedCourse });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+app.delete("/courses/:id",
+  authMiddleware, roleMiddleware("teacher"),
+   async (req, res) => {
+  try {
+        const courseId = req.params.id;
+        const course = await Course.findById(courseId);
+        if(!course) {
+          return res.status(404).json({ message: "Course not found" });
+        }
+
+console.log("COURSE TEACHER ID:", course.teacher.toString());
+console.log("LOGGED IN USER ID:", req.user.userId);
+        if (course.teacher.toString() !== req.user.userId) {
+        return res.status(403).json({
+         message: "You can only delete your own course"
+        });
+}
+        const deletedCourse = await Course.findByIdAndDelete(courseId);
+        if (!deletedCourse) {
+          return res.status(404).json({ message: "Course not found" });
+        }
+        res.status(200).json({ message: "Course deleted successfully" });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
 app.get("/profile", authMiddleware, (req, res) => {
   res.status(200).json({
     message: "Protected route accessed",
     user: req.user
   });
+});
+app.get('/courses', async (req, res) => {
+  try{
+    const courses = await Course.find();
+    res.status(200).json(courses);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+app.get("/courses/:id", async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id)
+    if (!course){
+      return res.status(404).json({ message: "Course not found" });
+    }
+    res.status(200).json(course);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
 });
 app.get(
   "/admin-test",

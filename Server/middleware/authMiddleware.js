@@ -22,7 +22,8 @@ console.log("TOKEN RECEIVED:", token);
     next();
 
   } catch (error) {
-    
+     console.log("JWT ERROR:", error.name);
+  console.log("JWT MESSAGE:", error.message);
     return res.status(401).json({
       message: "Invalid or expired token"
     });

@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import authMiddleware from "./middleware/authMiddleware.js";
 import roleMiddleware from "./middleware/roleMiddleware.js";
 import Course from "./models/Course.js";
+import Enrollment from "./models/Enrollment.js"
 dotenv.config();
 
 
@@ -14,22 +15,23 @@ const app = express()
 app.use(express.json())
 
 app.post("/users", async (req, res) => {
-    
-    try{
+
+  try {
     const { name, email, password } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await User.create(
-        {
-            name, 
-            email, 
-            password : hashedPassword
-        }
+      {
+        name,
+        email,
+        password: hashedPassword
+      }
     )
     res.status(201).json(user)
 
-} catch (error) {
+  } catch (error) {
     res.status(400).json({ message: error.message })
-}}
+  }
+}
 );
 app.post("/login", async (req, res) => {
   try {
@@ -78,83 +80,125 @@ app.post("/login", async (req, res) => {
     });
 
   } catch (error) {
-     
+
     res.status(400).json({
       message: error.message
     });
   }
 });
-app.post("/courses", 
-authMiddleware, roleMiddleware("teacher"), async (req, res) => {
-  try { 
-    const { title, description, price } = req.body;
-    const teacherId = req.user.userId; // Get the teacher's ID from the authenticated user
-    const course = await Course.create({
-      title,
-      description,
-      price,
-      teacher: teacherId
-    });
-    res.status(201).json(course);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
+app.post("/courses",
+  authMiddleware, roleMiddleware("teacher"), async (req, res) => {
+    try {
+      const { title, description, price } = req.body;
+      const teacherId = req.user.userId; // Get the teacher's ID from the authenticated user
+      const course = await Course.create({
+        title,
+        description,
+        price,
+        teacher: teacherId
+      });
+      res.status(201).json(course);
+    } catch (error) {
+      res.status(400).json({ message: error.message });
+    }
+  });
 app.put("/courses/:id",
   authMiddleware,
   roleMiddleware("teacher"),
   async (req, res) => {
+    try {
+      const courseId = req.params.id;
+      const course = await Course.findById(courseId);
+      if (!course) {
+        return res.status(404).json({ message: "Course not found" });
+      }
+      if (course.teacher.toString() !== req.user.userId) {
+        return res.status(403).json({
+          message: "You can only update your own course"
+        });
+      }
+      const { title, description, price } = req.body;
+      const updatedCourse = await Course.findByIdAndUpdate(
+        courseId,
+        { title, description, price },
+        { new: true }
+      );
+      if (!updatedCourse) {
+        return res.status(404).json({ message: "Course not found" });
+      }
+      res.status(200).json({ message: "Course Updated Successfully", course: updatedCourse });
+    } catch (error) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+app.post("/enroll", authMiddleware, roleMiddleware("student"), async (req, res) => {
   try {
-    const courseId = req.params.id;
+    const { courseId } = req.body;
+    const studentId = req.user.userId;
     const course = await Course.findById(courseId);
     if (!course) {
       return res.status(404).json({ message: "Course not found" });
     }
-    if (course.teacher.toString() !== req.user.userId) {
-  return res.status(403).json({
-    message: "You can only update your own course"
-  });
-}
-    const { title, description, price } = req.body;
-    const updatedCourse = await Course.findByIdAndUpdate(
-      courseId,
-      { title, description, price },
-      { new: true }
-    );
-    if (!updatedCourse) {
-      return res.status(404).json({ message: "Course not found" });
+    const existingEnrollment = await Enrollment.findOne({
+      student: studentId,
+      course: courseId
+    });
+    if (existingEnrollment) {
+      return res.status(400).json({ message: "You are already enrolled in this course" });
     }
-    res.status(200).json({ message: "Course Updated Successfully", course: updatedCourse });
+    const enrollment = await Enrollment.create({
+      student: studentId,
+      course: courseId
+    });
+    res.status(201).json({ message: "Enrollment created successfully", enrollment });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
-});
+})
+app.get(
+  "/my-enrollments",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const studentId = req.user.userId;
+      const enrollments = await Enrollment.find({
+        student: studentId
+      }).populate("course");
+      res.status(200).json({ message: "Enrollments found", enrollments });
+    } catch (error) {
+      res.status(400).json({
+        message: error.message
+      });
+    }
+  }
+);
 app.delete("/courses/:id",
   authMiddleware, roleMiddleware("teacher"),
-   async (req, res) => {
-  try {
-        const courseId = req.params.id;
-        const course = await Course.findById(courseId);
-        if(!course) {
-          return res.status(404).json({ message: "Course not found" });
-        }
+  async (req, res) => {
+    try {
+      const courseId = req.params.id;
+      const course = await Course.findById(courseId);
+      if (!course) {
+        return res.status(404).json({ message: "Course not found" });
+      }
 
-console.log("COURSE TEACHER ID:", course.teacher.toString());
-console.log("LOGGED IN USER ID:", req.user.userId);
-        if (course.teacher.toString() !== req.user.userId) {
+      console.log("COURSE TEACHER ID:", course.teacher.toString());
+      console.log("LOGGED IN USER ID:", req.user.userId);
+      if (course.teacher.toString() !== req.user.userId) {
         return res.status(403).json({
-         message: "You can only delete your own course"
+          message: "You can only delete your own course"
         });
-}
-        const deletedCourse = await Course.findByIdAndDelete(courseId);
-        if (!deletedCourse) {
-          return res.status(404).json({ message: "Course not found" });
-        }
-        res.status(200).json({ message: "Course deleted successfully" });
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
+      }
+      const deletedCourse = await Course.findByIdAndDelete(courseId);
+      if (!deletedCourse) {
+        return res.status(404).json({ message: "Course not found" });
+      }
+      res.status(200).json({ message: "Course deleted successfully" });
+    } catch (error) {
+      res.status(400).json({ message: error.message });
+    }
+  });
 app.get("/profile", authMiddleware, (req, res) => {
   res.status(200).json({
     message: "Protected route accessed",
@@ -162,7 +206,7 @@ app.get("/profile", authMiddleware, (req, res) => {
   });
 });
 app.get('/courses', async (req, res) => {
-  try{
+  try {
     const courses = await Course.find();
     res.status(200).json(courses);
   } catch (error) {
@@ -172,7 +216,7 @@ app.get('/courses', async (req, res) => {
 app.get("/courses/:id", async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
-    if (!course){
+    if (!course) {
       return res.status(404).json({ message: "Course not found" });
     }
     res.status(200).json(course);
@@ -203,7 +247,7 @@ app.get(
   }
 );
 app.get("/", (req, res) => {
-    res.send("Hello World")
+  res.send("Hello World")
 })
 
 

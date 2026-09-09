@@ -7,6 +7,7 @@ import authMiddleware from "./middleware/authMiddleware.js";
 import roleMiddleware from "./middleware/roleMiddleware.js";
 import Course from "./models/Course.js";
 import Enrollment from "./models/Enrollment.js"
+import Lecture from "./models/Lecture.js";
 dotenv.config();
 
 
@@ -155,6 +156,7 @@ app.post("/enroll", authMiddleware, roleMiddleware("student"), async (req, res) 
     res.status(400).json({ message: error.message });
   }
 })
+
 app.get(
   "/my-enrollments",
   authMiddleware,
@@ -199,6 +201,144 @@ app.delete("/courses/:id",
       res.status(400).json({ message: error.message });
     }
   });
+  app.post(
+  "/lectures",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+         const { title, description, courseId } = req.body;
+         const teacherId = req.user.userId;
+         const course = await Course.findById(courseId);
+
+if (!course) {
+  return res.status(404).json({
+    message: "Course not found"
+  });
+}
+if (course.teacher.toString() !== teacherId) {
+  return res.status(403).json({
+    message: "You are not authorized to add lecture to this course"
+  });
+}
+const lecture = await Lecture.create({
+  title,
+  description,
+  course: courseId
+});
+res.status(201).json({
+  message: "Lecture created successfully",
+  lecture
+});
+    } catch (error) {
+      res.status(400).json({
+        message: error.message
+      });
+    }
+  }
+);
+app.get(
+  "/lectures",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      
+      const lectures = await Lecture.find();
+      res.status(200).json({ message: "Lectures found", lectures });  
+    } catch (error) {
+      res.status(400).json({
+        message: error.message
+      });
+    }
+  }
+);
+app.get(
+  "/lectures/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const lectureId = req.params.id;
+
+      const lecture = await Lecture.findById(lectureId);
+
+      if (!lecture) {
+        return res.status(404).json({
+          message: "Lecture not found"
+        });
+      }
+
+      res.status(200).json({
+        message: "Lecture found",
+        lecture
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.put(
+  "/lectures/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const lectureId = req.params.id;
+      const lecture = await Lecture.findById(lectureId);
+      if (!lecture) {
+        return res.status(404).json({
+          message: "Lecture not found"
+        });
+      }
+      const { title, content } = req.body;
+      lecture.title = title;
+      lecture.content = content;
+      // lecture.videoUrl = videoUrl;
+      await lecture.save();
+      res.status(200).json({
+  message: "Lecture updated successfully",
+  lecture
+});
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.delete(
+  "/lectures/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+          const lectureId = req.params.id;
+          const lecture = await Lecture.findById(lectureId);
+          if (!lecture) {
+  return res.status(404).json({
+    message: "Lecture not found"
+  });
+}
+await Lecture.findByIdAndDelete(lectureId);
+
+      res.status(200).json({
+        message: "Lecture deleted successfully"
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
 app.get("/profile", authMiddleware, (req, res) => {
   res.status(200).json({
     message: "Protected route accessed",
@@ -224,6 +364,7 @@ app.get("/courses/:id", async (req, res) => {
     res.status(400).json({ message: error.message });
   }
 });
+
 app.get(
   "/admin-test",
   authMiddleware,

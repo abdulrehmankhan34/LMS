@@ -8,6 +8,8 @@ import roleMiddleware from "./middleware/roleMiddleware.js";
 import Course from "./models/Course.js";
 import Enrollment from "./models/Enrollment.js"
 import Lecture from "./models/Lecture.js";
+import Assignment from "./models/Assignment.js";
+import Quiz from "./models/Quiz.js";
 dotenv.config();
 
 
@@ -132,6 +134,51 @@ app.put("/courses/:id",
       res.status(400).json({ message: error.message });
     }
   });
+  app.delete("/courses/:id",
+  authMiddleware, roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const courseId = req.params.id;
+      const course = await Course.findById(courseId);
+      if (!course) {
+        return res.status(404).json({ message: "Course not found" });
+      }
+
+      console.log("COURSE TEACHER ID:", course.teacher.toString());
+      console.log("LOGGED IN USER ID:", req.user.userId);
+      if (course.teacher.toString() !== req.user.userId) {
+        return res.status(403).json({
+          message: "You can only delete your own course"
+        });
+      }
+      const deletedCourse = await Course.findByIdAndDelete(courseId);
+      if (!deletedCourse) {
+        return res.status(404).json({ message: "Course not found" });
+      }
+      res.status(200).json({ message: "Course deleted successfully" });
+    } catch (error) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.get('/courses', async (req, res) => {
+  try {
+    const courses = await Course.find();
+    res.status(200).json(courses);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+app.get("/courses/:id", async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id)
+    if (!course) {
+      return res.status(404).json({ message: "Course not found" });
+    }
+    res.status(200).json(course);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
 app.post("/enroll", authMiddleware, roleMiddleware("student"), async (req, res) => {
   try {
     const { courseId } = req.body;
@@ -175,61 +222,36 @@ app.get(
     }
   }
 );
-app.delete("/courses/:id",
-  authMiddleware, roleMiddleware("teacher"),
-  async (req, res) => {
-    try {
-      const courseId = req.params.id;
-      const course = await Course.findById(courseId);
-      if (!course) {
-        return res.status(404).json({ message: "Course not found" });
-      }
 
-      console.log("COURSE TEACHER ID:", course.teacher.toString());
-      console.log("LOGGED IN USER ID:", req.user.userId);
-      if (course.teacher.toString() !== req.user.userId) {
-        return res.status(403).json({
-          message: "You can only delete your own course"
-        });
-      }
-      const deletedCourse = await Course.findByIdAndDelete(courseId);
-      if (!deletedCourse) {
-        return res.status(404).json({ message: "Course not found" });
-      }
-      res.status(200).json({ message: "Course deleted successfully" });
-    } catch (error) {
-      res.status(400).json({ message: error.message });
-    }
-  });
-  app.post(
+app.post(
   "/lectures",
   authMiddleware,
   roleMiddleware("teacher"),
   async (req, res) => {
     try {
-         const { title, description, courseId } = req.body;
-         const teacherId = req.user.userId;
-         const course = await Course.findById(courseId);
+      const { title, description, courseId } = req.body;
+      const teacherId = req.user.userId;
+      const course = await Course.findById(courseId);
 
-if (!course) {
-  return res.status(404).json({
-    message: "Course not found"
-  });
-}
-if (course.teacher.toString() !== teacherId) {
-  return res.status(403).json({
-    message: "You are not authorized to add lecture to this course"
-  });
-}
-const lecture = await Lecture.create({
-  title,
-  description,
-  course: courseId
-});
-res.status(201).json({
-  message: "Lecture created successfully",
-  lecture
-});
+      if (!course) {
+        return res.status(404).json({
+          message: "Course not found"
+        });
+      }
+      if (course.teacher.toString() !== teacherId) {
+        return res.status(403).json({
+          message: "You are not authorized to add lecture to this course"
+        });
+      }
+      const lecture = await Lecture.create({
+        title,
+        description,
+        course: courseId
+      });
+      res.status(201).json({
+        message: "Lecture created successfully",
+        lecture
+      });
     } catch (error) {
       res.status(400).json({
         message: error.message
@@ -243,9 +265,9 @@ app.get(
   roleMiddleware("teacher"),
   async (req, res) => {
     try {
-      
+
       const lectures = await Lecture.find();
-      res.status(200).json({ message: "Lectures found", lectures });  
+      res.status(200).json({ message: "Lectures found", lectures });
     } catch (error) {
       res.status(400).json({
         message: error.message
@@ -289,21 +311,26 @@ app.put(
   async (req, res) => {
     try {
       const lectureId = req.params.id;
-      const lecture = await Lecture.findById(lectureId);
+      const lecture = await Lecture.findById(lectureId).populate("course");
       if (!lecture) {
         return res.status(404).json({
           message: "Lecture not found"
         });
       }
-      const { title, content } = req.body;
+      if (lecture.course.teacher.toString() !== req.user.userId) {
+        return res.status(403).json({
+          message: "You are not authorized to update this lecture"
+        });
+      }
+      const { title, description } = req.body;
       lecture.title = title;
-      lecture.content = content;
+      lecture.description = description;
       // lecture.videoUrl = videoUrl;
       await lecture.save();
       res.status(200).json({
-  message: "Lecture updated successfully",
-  lecture
-});
+        message: "Lecture updated successfully",
+        lecture
+      });
     } catch (error) {
       res.status(500).json({
         message: "Server error",
@@ -318,14 +345,19 @@ app.delete(
   roleMiddleware("teacher"),
   async (req, res) => {
     try {
-          const lectureId = req.params.id;
-          const lecture = await Lecture.findById(lectureId);
-          if (!lecture) {
-  return res.status(404).json({
-    message: "Lecture not found"
-  });
-}
-await Lecture.findByIdAndDelete(lectureId);
+      const lectureId = req.params.id;
+      const lecture = await Lecture.findById(lectureId).populate("course");
+      if (!lecture) {
+        return res.status(404).json({
+          message: "Lecture not found"
+        });
+      }
+      if (lecture.course.teacher.toString() !== req.user.userId) {
+        return res.status(403).json({
+          message: "You are not authorized to delete this lecture"
+        });
+      }
+      await Lecture.findByIdAndDelete(lectureId);
 
       res.status(200).json({
         message: "Lecture deleted successfully"
@@ -339,31 +371,299 @@ await Lecture.findByIdAndDelete(lectureId);
     }
   }
 );
+app.post(
+  "/assignments",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const { title, description, courseId, dueDate } = req.body;
+      const course = await Course.findById(courseId);
+
+      if (!course) {
+        return res.status(404).json({
+          message: "Course not found",
+        });
+      }
+      if (course.teacher.toString() !== req.user.userId) {
+        return res.status(403).json({
+          message: "You are not authorized to create an assignment for this course",
+        });
+      }
+      const assignment = await Assignment.create({
+        title,
+        description,
+        course: courseId,
+        dueDate,
+      });
+      res.status(201).json({
+        message: "Assignment created successfully",
+        assignment,
+      });
+    } catch (error) {
+      res.status(400).json({
+        message: error.message
+      });
+    }
+  }
+);
+app.get("/assignments", authMiddleware, roleMiddleware("teacher"), async (req, res) => {
+  try {
+    const assignments = await Assignment.find().populate("course");
+    res.status(200).json({ message: "Assignments found", assignments });
+  } catch (error) {
+    res.status(400).json({
+      message: error.message
+    });
+  }
+})
+app.get(
+  "/assignments/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const assignmentId = req.params.id;
+
+      const assignment = await Assignment.findById(assignmentId)
+        .populate("course");
+
+      if (!assignment) {
+        return res.status(404).json({
+          message: "Assignment not found"
+        });
+      }
+
+      res.status(200).json({
+        message: "Assignment found",
+        assignment
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.put(
+  "/assignments/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const assignmentId = req.params.id;
+      const assignment = await Assignment.findById(assignmentId).populate("course");
+      if (!assignment) {
+        return res.status(404).json({
+          message: "Assignment not found"
+        });
+      }
+      if (assignment.course.teacher.toString() !== req.user.userId) {
+        return res.status(403).json({
+          message: "You are not authorized to update this assignment"
+        });
+      }
+      const { title, description, dueDate } = req.body;
+      assignment.title = title;
+      assignment.description = description;
+      assignment.dueDate = dueDate;
+      await assignment.save();
+      res.status(200).json({
+        message: "Assignment updated successfully",
+        assignment
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+      });
+    }
+  }
+);
+app.delete(
+  "/assignments/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const assignmentId = req.params.id;
+
+      const assignment = await Assignment.findById(assignmentId)
+        .populate("course");
+
+      if (!assignment) {
+        return res.status(404).json({
+          message: "Assignment not found"
+        });
+      }
+
+      if (assignment.course.teacher.toString() !== req.user.userId) {
+        return res.status(403).json({
+          message: "You are not authorized to delete this assignment"
+        });
+      }
+
+      await Assignment.findByIdAndDelete(assignmentId);
+
+      res.status(200).json({
+        message: "Assignment deleted successfully"
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.post("/quizzes", authMiddleware, roleMiddleware("teacher"), async (req, res) => {
+  try {
+    const { title, description, courseId } = req.body;
+    const course = await Course.findById(courseId);
+    if(!course) {
+      res.status(404).json({ message: "Course not found" });
+    }
+    if(course.teacher.toString() !== req.user.userId) {
+      res.status(403).json({ message: "You are not authorized to create a quiz for this course" });
+    }
+    const quiz = await Quiz.create({
+      title,
+      description,
+      course: courseId
+    });
+    res.status(201).json({ message: "Quiz created successfully", quiz });
+  } catch (error) {
+    res.status(400).json({ message: error.message
+    })
+  }
+})
+app.get(
+  "/quizzes",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const quizzes = await Quiz.find().populate("course");
+
+      res.status(200).json({
+        message: "Quizzes found",
+        quizzes
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.get(
+  "/quizzes/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const quizId = req.params.id;
+      const quiz = await Quiz.findById(quizId).populate("course");
+      if(!quiz) {
+        return res.status(404).json({
+          message: "Quiz not found"
+        });
+      }
+      if(quiz.course.teacher.toString() !== req.user.userId) {
+        return res.status(403).json({
+          message: "You are not authorized to view this quiz"
+        });
+      } 
+      res.status(200).json({
+        message: "Quiz found",
+        quiz
+      });
+    }
+    catch (error) {
+      res.status(500).json({
+        message: "Server error",  
+      });
+    }
+  }
+);
+app.put(
+  "/quizzes/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const quizId = req.params.id;
+      const quiz = await Quiz.findById(quizId).populate("course");
+      if(!quiz) {
+        return res.status(404).json({
+          message: "Quiz not found"
+        });
+      }
+      if(quiz.course.teacher.toString() !== req.user.userId) {
+        return res.status(403).json({
+          message: "You are not authorized to update this quiz"
+        });
+      }
+      const { title, description } = req.body;
+      quiz.title = title;
+      quiz.description = description;
+      await quiz.save();
+      res.status(200).json({
+        message: "Quiz updated successfully",
+        quiz
+      });
+    }
+    catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+)
+app.delete(
+  "/quizzes/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const quizId = req.params.id;
+      const quiz = await Quiz.findById(quizId).populate("course");
+      if(!quiz) {
+        return res.status(404).json({
+          message: "Quiz not found"
+        });
+      }
+      if(quiz.course.teacher.toString() !== req.user.userId) {
+        return res.status(403).json({
+          message: "You are not authorized to delete this quiz"
+        });
+      }
+      await Quiz.findByIdAndDelete(quizId);
+      res.status(200).json({
+        message: "Quiz deleted successfully"
+      });
+    }
+    catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
 app.get("/profile", authMiddleware, (req, res) => {
   res.status(200).json({
     message: "Protected route accessed",
     user: req.user
   });
 });
-app.get('/courses', async (req, res) => {
-  try {
-    const courses = await Course.find();
-    res.status(200).json(courses);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
-app.get("/courses/:id", async (req, res) => {
-  try {
-    const course = await Course.findById(req.params.id)
-    if (!course) {
-      return res.status(404).json({ message: "Course not found" });
-    }
-    res.status(200).json(course);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
+
+
 
 app.get(
   "/admin-test",

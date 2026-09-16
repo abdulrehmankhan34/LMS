@@ -10,6 +10,7 @@ import Enrollment from "./models/Enrollment.js"
 import Lecture from "./models/Lecture.js";
 import Assignment from "./models/Assignment.js";
 import Quiz from "./models/Quiz.js";
+import Progress from "./models/Progress.js";
 dotenv.config();
 
 
@@ -656,15 +657,167 @@ app.delete(
     }
   }
 );
+app.post(
+  "/progress",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const { courseId } = req.body;
+      const studentId = req.user.userId;
+
+      const course = await Course.findById(courseId);
+    
+      if (!course) {
+        return res.status(404).json({
+          message: "Course not found"
+        });
+      }
+
+      const enrollment = await Enrollment.findOne({
+        student: studentId,
+        course: courseId
+      });
+
+      if (!enrollment) {
+        return res.status(403).json({
+          message: "You are not enrolled in this course"
+        });
+      }
+
+      const existingProgress = await Progress.findOne({
+        student: studentId,
+        course: courseId
+      });
+
+      if (existingProgress) {
+        return res.status(400).json({
+          message: "Progress already exists for this course"
+        });
+      }
+
+      const progress = await Progress.create({
+        student: studentId,
+        course: courseId,
+        completedLectures: []
+      });
+
+      res.status(201).json({
+        message: "Progress created successfully",
+        progress
+      });
+
+    } catch (error) {
+      res.status(400).json({
+        message: error.message
+      });
+    }
+  }
+);
+app.put(
+  "/progress/complete-lecture/:lectureId",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const studentId = req.user.userId;
+      console.log("STUDENT ID:", studentId); // Log the student ID for debugging
+      const lectureId = req.params.lectureId;
+      console.log("LECTURE ID:", lectureId); // Log the lecture ID for debugging
+
+      const lecture = await Lecture.findById(lectureId);
+
+      if (!lecture) {
+        return res.status(404).json({
+          message: "Lecture not found"
+        });
+      }
+
+      const progress = await Progress.findOne({
+        student: studentId,
+        course: lecture.course
+      });
+
+      if (!progress) {
+        return res.status(404).json({
+          message: "Progress not found"
+        });
+      }
+
+      if (progress.completedLectures.includes(lectureId)) {
+        return res.status(400).json({
+          message: "Lecture already completed"
+        });
+      }
+
+      progress.completedLectures.push(lectureId);
+
+      await progress.save();
+
+      res.status(200).json({
+        message: "Lecture marked as completed",
+        progress
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.get(
+  "/progress",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const studentId = req.user.userId;
+
+      const progress = await Progress.findOne({
+        student: studentId
+      }).populate("course");
+
+      if (!progress) {
+        return res.status(404).json({
+          message: "Progress not found"
+        });
+      }
+
+      const totalLectures = await Lecture.countDocuments({
+        course: progress.course._id
+      });
+
+      const completedLectures = progress.completedLectures.length;
+
+      const progressPercentage =
+        totalLectures === 0
+          ? 0
+          : (completedLectures / totalLectures) * 100;
+
+      res.status(200).json({
+        message: "Progress found",
+        course: progress.course.title,
+        totalLectures,
+        completedLectures,
+        progressPercentage
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
 app.get("/profile", authMiddleware, (req, res) => {
   res.status(200).json({
     message: "Protected route accessed",
     user: req.user
   });
 });
-
-
-
 app.get(
   "/admin-test",
   authMiddleware,

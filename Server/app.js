@@ -10,6 +10,8 @@ import Enrollment from "./models/Enrollment.js"
 import Lecture from "./models/Lecture.js";
 import Assignment from "./models/Assignment.js";
 import Quiz from "./models/Quiz.js";
+import QuizQuestion from "./models/QuizQuestion.js";
+import QuizAttempt from "./models/QuizAttempt.js";
 import Progress from "./models/Progress.js";
 dotenv.config();
 
@@ -658,6 +660,183 @@ app.delete(
   }
 );
 app.post(
+  "/quiz-questions",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const { quizId, question, options, correctAnswer } = req.body;
+
+      const quiz = await Quiz.findById(quizId);
+
+      if (!quiz) {
+        return res.status(404).json({
+          message: "Quiz not found"
+        });
+      }
+
+      const quizQuestion = await QuizQuestion.create({
+        quiz: quizId,
+        question,
+        options,
+        correctAnswer
+      });
+
+      res.status(201).json({
+        message: "Quiz question created",
+        quizQuestion
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.get(
+  "/quiz-questions",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const questions = await QuizQuestion.find().populate("quiz");
+
+      res.status(200).json({
+        message: "Quiz questions found",
+        questions
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.put(
+  "/quiz-questions/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const { question, options, correctAnswer } = req.body;
+
+      const quizQuestion = await QuizQuestion.findByIdAndUpdate(
+        req.params.id,
+        {
+          question,
+          options,
+          correctAnswer
+        },
+        { new: true }
+      );
+
+      if (!quizQuestion) {
+        return res.status(404).json({
+          message: "Quiz question not found"
+        });
+      }
+
+      res.status(200).json({
+        message: "Quiz question updated",
+        quizQuestion
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.delete(
+  "/quiz-questions/:id",
+  authMiddleware,
+  roleMiddleware("teacher"),
+  async (req, res) => {
+    try {
+      const quizQuestion = await QuizQuestion.findByIdAndDelete(
+        req.params.id
+      );
+
+      if (!quizQuestion) {
+        return res.status(404).json({
+          message: "Quiz question not found"
+        });
+      }
+
+      res.status(200).json({
+        message: "Quiz question deleted"
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.post(
+  "/quiz-attempt",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const { quizId, answers } = req.body;
+      const studentId = req.user.userId;
+
+      const quiz = await Quiz.findById(quizId);
+
+      if (!quiz) {
+        return res.status(404).json({
+          message: "Quiz not found"
+        });
+      }
+
+      const questions = await QuizQuestion.find({
+        quiz: quizId
+      });
+
+      let score = 0;
+
+      for (const studentAnswer of answers) {
+        const question = questions.find(
+          (q) => q._id.toString() === studentAnswer.question
+        );
+
+        if (
+          question &&
+          question.correctAnswer === studentAnswer.answer
+        ) {
+          score++;
+        }
+      }
+
+      const quizAttempt = await QuizAttempt.create({
+        student: studentId,
+        quiz: quizId,
+        answers,
+        score
+      });
+
+      res.status(201).json({
+        message: "Quiz attempted successfully",
+        quizAttempt
+      });
+
+    } catch (error) {
+      res.status(400).json({
+        message: error.message
+      });
+    }
+  }
+);
+app.post(
   "/progress",
   authMiddleware,
   roleMiddleware("student"),
@@ -753,7 +932,7 @@ app.put(
       progress.completedLectures.push(lectureId);
 
       await progress.save();
-
+    
       res.status(200).json({
         message: "Lecture marked as completed",
         progress

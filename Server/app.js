@@ -991,6 +991,130 @@ app.get(
     }
   }
 );
+app.get(
+  "/quiz-result/:quizId",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const studentId = req.user.userId;
+      const quizId = req.params.quizId;
+
+      const result = await QuizAttempt.findOne({
+        student: studentId,
+        quiz: quizId
+      }).populate("quiz");
+
+      if (!result) {
+        return res.status(404).json({
+          message: "Quiz result not found"
+        });
+      }
+
+      res.status(200).json({
+        message: "Quiz result found",
+        result
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.get(
+  "/performance",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const studentId = req.user.userId;
+
+      const progress = await Progress.findOne({
+        student: studentId
+      }).populate("course");
+
+      const quizAttempts = await QuizAttempt.find({
+        student: studentId
+      }).populate("quiz");
+
+      if (!progress && quizAttempts.length === 0) {
+        return res.status(404).json({
+          message: "Performance data not found"
+        });
+      }
+
+      const totalLectures = progress
+        ? await Lecture.countDocuments({
+            course: progress.course._id
+          })
+        : 0;
+
+      const completedLectures = progress
+        ? progress.completedLectures.length
+        : 0;
+
+      const totalQuizAttempts = quizAttempts.length;
+
+      const totalScore = quizAttempts.reduce(
+        (total, attempt) => total + attempt.score,
+        0
+      );
+
+      res.status(200).json({
+        message: "Performance found",
+        course: progress ? progress.course.title : null,
+        totalLectures,
+        completedLectures,
+        totalQuizAttempts,
+        totalScore
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.get(
+  "/dashboard",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const studentId = req.user.userId;
+
+      const enrollments = await Enrollment.find({
+        student: studentId
+      }).populate("course");
+
+      const progress = await Progress.find({
+        student: studentId
+      }).populate("course");
+
+      const quizAttempts = await QuizAttempt.find({
+        student: studentId
+      }).populate("quiz");
+
+      res.status(200).json({
+        message: "Dashboard data found",
+        enrollments,
+        progress,
+        quizAttempts
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
 app.get("/profile", authMiddleware, (req, res) => {
   res.status(200).json({
     message: "Protected route accessed",

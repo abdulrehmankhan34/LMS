@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import User from "./models/User.js";
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken";
+import cors from "cors";
 import authMiddleware from "./middleware/authMiddleware.js";
 import roleMiddleware from "./middleware/roleMiddleware.js";
 import Course from "./models/Course.js";
@@ -19,6 +20,7 @@ dotenv.config();
 
 const app = express()
 app.use(express.json())
+app.use(cors())
 
 app.post("/users", async (req, res) => {
 
@@ -72,8 +74,6 @@ app.post("/login", async (req, res) => {
         expiresIn: "1d"
       }
     );
-    console.log("JWT Token:", token); // Log the generated token for debugging
-
     res.status(200).json({
       message: "Login successful",
       user: {
@@ -147,8 +147,6 @@ app.put("/courses/:id",
         return res.status(404).json({ message: "Course not found" });
       }
 
-      console.log("COURSE TEACHER ID:", course.teacher.toString());
-      console.log("LOGGED IN USER ID:", req.user.userId);
       if (course.teacher.toString() !== req.user.userId) {
         return res.status(403).json({
           message: "You can only delete your own course"
@@ -201,7 +199,12 @@ app.post("/enroll", authMiddleware, roleMiddleware("student"), async (req, res) 
       student: studentId,
       course: courseId
     });
-    res.status(201).json({ message: "Enrollment created successfully", enrollment });
+    const progress = await Progress.create({
+      student: studentId,
+      course: courseId,
+      completedLectures: []
+    });
+    res.status(201).json({ message: "Enrollment created successfully", enrollment, progress });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -374,6 +377,75 @@ app.delete(
     }
   }
 );
+app.get(
+  "/student-lectures/:courseId",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const lectures = await Lecture.find({
+        course: req.params.courseId
+      });
+
+      res.status(200).json({
+        message: "Lectures found",
+        lectures
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.get(
+  "/student-quizzes/:courseId",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const quizzes = await Quiz.find({
+        course: req.params.courseId
+      });
+
+      res.status(200).json({
+        message: "Quizzes found",
+        quizzes
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.get(
+  "/student-quiz-questions/:quizId",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const questions = await QuizQuestion.find({
+        quiz: req.params.quizId
+      });
+
+      res.status(200).json({
+        message: "Quiz questions found",
+        questions
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
 app.post(
   "/assignments",
   authMiddleware,
@@ -526,10 +598,10 @@ app.post("/quizzes", authMiddleware, roleMiddleware("teacher"), async (req, res)
     const { title, description, courseId } = req.body;
     const course = await Course.findById(courseId);
     if(!course) {
-      res.status(404).json({ message: "Course not found" });
+      return res.status(404).json({ message: "Course not found" });
     }
     if(course.teacher.toString() !== req.user.userId) {
-      res.status(403).json({ message: "You are not authorized to create a quiz for this course" });
+      return res.status(403).json({ message: "You are not authorized to create a quiz for this course" });
     }
     const quiz = await Quiz.create({
       title,
@@ -900,9 +972,7 @@ app.put(
   async (req, res) => {
     try {
       const studentId = req.user.userId;
-      console.log("STUDENT ID:", studentId); // Log the student ID for debugging
       const lectureId = req.params.lectureId;
-      console.log("LECTURE ID:", lectureId); // Log the lecture ID for debugging
 
       const lecture = await Lecture.findById(lectureId);
 
@@ -923,7 +993,9 @@ app.put(
         });
       }
 
-      if (progress.completedLectures.includes(lectureId)) {
+      if (progress.completedLectures.some((completedLectureId) =>
+        completedLectureId.toString() === lectureId
+      )) {
         return res.status(400).json({
           message: "Lecture already completed"
         });
@@ -980,6 +1052,8 @@ app.get(
         course: progress.course.title,
         totalLectures,
         completedLectures,
+          completedLectureIds: progress.completedLectures,
+
         progressPercentage
       });
 
@@ -1105,6 +1179,29 @@ app.get(
         enrollments,
         progress,
         quizAttempts
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message
+      });
+    }
+  }
+);
+app.get(
+  "/student-assignments/:courseId",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const assignments = await Assignment.find({
+        course: req.params.courseId
+      });
+
+      res.status(200).json({
+        message: "Assignments found",
+        assignments
       });
 
     } catch (error) {

@@ -9,9 +9,14 @@ const authMiddleware = (req, res, next) => {
       });
     }
 
-    const token = authHeader.split(" ")[1];
-    console.log("SECRET EXISTS:", !!process.env.JWT_SECRET);
-console.log("TOKEN RECEIVED:", token);
+    const [scheme, token] = authHeader.split(" ");
+
+    if (scheme !== "Bearer" || !token) {
+      return res.status(401).json({
+        message: "Invalid authorization header"
+      });
+    }
+
     const decoded = jwt.verify(
       token,
       process.env.JWT_SECRET
@@ -22,8 +27,6 @@ console.log("TOKEN RECEIVED:", token);
     next();
 
   } catch (error) {
-     console.log("JWT ERROR:", error.name);
-  console.log("JWT MESSAGE:", error.message);
     return res.status(401).json({
       message: "Invalid or expired token"
     });
